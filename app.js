@@ -1,7 +1,7 @@
 const Vooloovee=(()=>{
 const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
-const STORE='vooloovee-v30-clean';
-const OLD_STORE='';
+const STORE='vooloovee-v29-supabase';
+const OLD_STORE='veloura-v29-supabase';
 const PROJECT_EMAIL='vooloovee@gmail.com';
 const SUPABASE_URL='https://crbsftxtwrvanmbhlmip.supabase.co';
 const SUPABASE_KEY='sb_publishable_CxwKl83msa70VO_fnO7BTw_dzFRyey9';
@@ -10,8 +10,10 @@ const db=()=>{try{if(!window.supabase)return null; if(!supabaseClient)supabaseCl
 const cats=['Women','Men','Kids','Beauty','Home & Living','Footwear','Accessories'];
 const brandLogin={username:'brand',password:'Brand@123',email:'vooloovee@gmail.com'};
 function backendOrigin(){
-  if(location.protocol==='file:')return 'http://localhost:3000';
-  return location.origin || 'http://localhost:3000';
+  // Use the Node server for real emails. This prevents the Verify/Forgot buttons from
+  // accidentally calling VS Code Live Server or a file:// page.
+  if(location.protocol==='file:'||location.port&&location.port!=='3000')return 'http://localhost:3000';
+  return location.origin||'http://localhost:3000';
 }
 function encodeLinkData(obj){try{return btoa(unescape(encodeURIComponent(JSON.stringify(obj))))}catch(e){return ''}}
 function decodeLinkData(raw){try{return JSON.parse(decodeURIComponent(escape(atob(String(raw||'')))))}catch(e){return null}}
@@ -260,11 +262,14 @@ function authPage(){
     if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))return toast('Enter a valid email','bad');
     if(!/^[a-zA-Z0-9_]{4,16}$/.test(u))return toast('Username must be 4-16 letters/numbers','bad');
     if(p.length<6)return toast('Password must be at least 6 characters','bad');
-if(d.users.some(x=>String(x.username||'').toLowerCase()===u.toLowerCase() && String(x.email||'').toLowerCase()!==email))return toast('Username already exists','bad');
-    if(d.users.some(x=>(x.email||'').toLowerCase()===email))return toast('Email already exists','bad');
+    let existingEmail=d.users.find(x=>String(x.email||'').toLowerCase()===email);
+    if(d.users.some(x=>String(x.username||'').toLowerCase()===u.toLowerCase() && String(x.email||'').toLowerCase()!==email))return toast('Username already exists','bad');
     let code=String(Math.floor(100000+Math.random()*900000));
-    let user={id:uid('US'),username:u,password:p,name,email,emailVerified:false,verificationCode:code,resetCode:'',refundAccount:'',mobile:'',addresses:[]};
-    d.users.push(user); save(d,false); registerUserOnServer(user);
+    let user=existingEmail||{id:uid('US'),username:u,password:p,name,email,emailVerified:false,verificationCode:'',resetCode:'',refundAccount:'',mobile:'',addresses:[]};
+    if(existingEmail&&existingEmail.emailVerified)return toast('Email already exists','bad');
+    user.username=u;user.password=p;user.name=name;user.email=email;user.emailVerified=false;user.verificationCode=code;user.resetCode='';user.refundAccount=user.refundAccount||'';user.mobile=user.mobile||'';user.addresses=Array.isArray(user.addresses)?user.addresses:[];
+    if(!existingEmail)d.users.push(user);
+    save(d,false); await registerUserOnServer(user);
     let sent=await sendVoolooveeEmail('verify',user,code);
     showOtpScreen(email, sent);
     toast(sent.ok?'OTP sent to your email.':sent.reason, sent.ok?'ok':'bad');
@@ -544,19 +549,20 @@ window.brandAddUser=async()=>{
   if(!/^[a-zA-Z0-9_]{3,20}$/.test(username))return toast('Username must be 3-20 letters/numbers','bad');
   if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))return toast('Enter a valid email','bad');
   if(password.length<6)return toast('Password must be at least 6 characters','bad');
-  if(d.users.some(u=>String(u.username||'').toLowerCase()===username.toLowerCase()))return toast('Username already exists','bad');
-  if(d.users.some(u=>String(u.email||'').toLowerCase()===email))return toast('Email already exists','bad');
-  let user={id:uid('US'),username,password,name,email,emailVerified:verified,verificationCode:'',resetCode:'',refundAccount:'',mobile,addresses:address?[address]:[],usedPromoCodes:[],rewards:[],paymentDetails:{upi:'',cardName:'',cardLast4:''}};
-  d.users.push(user);
+  let existing=d.users.find(u=>String(u.email||'').toLowerCase()===email);
+  if(d.users.some(u=>String(u.username||'').toLowerCase()===username.toLowerCase() && (!existing||u.id!==existing.id)))return toast('Username already exists','bad');
+  let user=existing||{id:uid('US'),usedPromoCodes:[],rewards:[],paymentDetails:{upi:'',cardName:'',cardLast4:''}};
+  user.username=username;user.password=password;user.name=name;user.email=email;user.emailVerified=verified;user.verificationCode='';user.resetCode='';user.refundAccount=user.refundAccount||'';user.mobile=mobile;user.addresses=address?[address]:(Array.isArray(user.addresses)?user.addresses:[]);
+  if(!existing)d.users.push(user);
   if(verified)markEmailVerified(email);
   save(d,false);
   await registerUserOnServer(user);
-  toast('New user account added','ok');
+  toast(existing?'Existing user updated':'New user account added','ok');
   renderBrand('Users');
 };
 window.brandUserAction=(id,action)=>{if(action==='otp')sendLoginOtpMail(id);if(action==='delete')deleteBrandUser(id)};
 window.toggleUserPassword=id=>{let d=state(),u=d.users.find(x=>x.id===id),el=$(`#pass_${id}`);if(!u||!el)return;let showing=el.dataset.showing==='yes';el.textContent=showing?'••••••••':u.password;el.dataset.showing=showing?'no':'yes'};
-window.sendLoginOtpMail=async id=>{let d=state(),u=d.users.find(x=>x.id===id);if(!u||!u.email)return toast('No email found for this user','bad');u.verificationCode=String(Math.floor(100000+Math.random()*900000));u.pendingTempPassword='';u.tempAfterVerify=true;u.emailVerified=false;let sent=await sendVoolooveeEmail('verify',u,u.verificationCode);save(d,false);toast(sent.ok?'Verify OTP page link mailed. Temporary password will be created only after OTP verification.':sent.reason,sent.ok?'ok':'bad')};
+window.sendLoginOtpMail=async id=>{let d=state(),u=d.users.find(x=>x.id===id);if(!u||!u.email)return toast('No email found for this user','bad');u.verificationCode=String(Math.floor(100000+Math.random()*900000));u.pendingTempPassword='';u.tempAfterVerify=true;u.emailVerified=false;save(d,false);await registerUserOnServer(u);let sent=await sendVoolooveeEmail('verify',u,u.verificationCode);toast(sent.ok?'Verify OTP page link mailed. Temporary password will be created only after OTP verification.':sent.reason,sent.ok?'ok':'bad')};
 window.deleteBrandUser=async id=>{let d=state(),u=d.users.find(x=>x.id===id);if(!u)return;if(!confirm(`Delete user ${u.username}? This removes their cart, orders, complaints, reviews and saved details.`))return;rememberDeletedUser(u);await deleteUserOnServer(u);d.users=d.users.filter(x=>x.id!==id);if(d.userData)delete d.userData[id];d.orders=d.orders.filter(o=>o.userId!==id);d.complaints=d.complaints.filter(c=>c.userId!==id);d.reviews=d.reviews.filter(r=>r.userId!==id);if(d.currentUser===id){d.currentUser=null;d.session=null;sessionStorage.removeItem(USER_SESSION_KEY);sessionStorage.removeItem(APP_SESSION_KEY)}save(d,'User fully deleted');renderBrand('Users')};
 window.exportUsers=()=>{let d=state(),csv='Name,Username,Email,Email Verified,Mobile,Address,Password,Refund Account\n'+d.users.map(u=>`"${u.name||''}","${u.username}","${u.email||''}","${u.emailVerified?'Yes':'No'}","${u.mobile||''}","${((u.addresses||[])[0]||'').replace(/"/g,'""')}","${u.password}","${u.refundAccount||''}"`).join('\n');let a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='vooloovee_users.csv';a.click()};
 function offerAdmin(m,d){m.innerHTML=`<div class='section-title'><h2>Promo Codes</h2><p class='muted'>All promo codes are one-time use only. New promos mail all verified users.</p></div><section class='panel form-grid'><input id='ocode' placeholder='Code'><input id='otitle' placeholder='Title'><select id='otype'><option value='percent'>Percentage</option><option value='fixed'>Fixed</option></select><input id='ovalue' type='number' placeholder='Value'><input id='omin' type='number' placeholder='Min'><input id='oexp' type='date'><button class='btn primary' onclick='addOffer()'>Add Promo</button></section><table><tr><th>Code</th><th>Offer</th><th>Rule</th><th></th></tr>${d.offers.map(o=>`<tr><td>${o.code}</td><td>${o.title}</td><td>One-time use only${o.firstOrderOnly?' · First order only':''}</td><td><button class='btn danger' onclick="removeOffer('${o.id}')">Remove</button></td></tr>`).join('')}</table>`}window.addOffer=async()=>{let d=state(),code=clean($('#ocode').value).toUpperCase();if(!/^[A-Z0-9]{4,12}$/.test(code))return toast('Code 4-12 chars','bad');if(d.offers.some(o=>String(o.code).toUpperCase()===code))return toast('Promo code already exists','bad');let offer={id:uid('OF'),code,title:clean($('#otitle').value)||code,type:$('#otype').value,value:+$('#ovalue').value||1,min:+$('#omin').value||100,active:true,expiry:$('#oexp').value||'2026-12-31',firstOrderOnly:false,oneTime:true};d.offers.push(offer);save(d,false);renderBrand('Offers');await sendPromoAnnouncement(offer)};window.removeOffer=id=>{let d=state();d.offers=d.offers.filter(o=>o.id!==id);save(d);renderBrand('Offers')};
