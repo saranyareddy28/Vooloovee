@@ -2,12 +2,12 @@ require('dotenv').config();
 const path = require('path');
 const fs = require('fs');
 const express = require('express');
-const nodemailer = require('nodemailer');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const GMAIL_USER = process.env.GMAIL_USER || 'vooloovee@gmail.com';
-const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD;
+const BREVO_API_KEY = process.env.BREVO_API_KEY;
+const BREVO_SENDER_NAME = process.env.BREVO_SENDER_NAME || 'Vooloovee';
 const DATA_FILE = path.join(__dirname, 'vooloovee_email_state.json');
 function readEmailState(){
   try{return JSON.parse(fs.readFileSync(DATA_FILE,'utf8'))}
@@ -62,7 +62,7 @@ app.get('/api/email-status', (req, res) => {
   res.json({
     ok: true,
     sender: GMAIL_USER,
-    configured: Boolean(GMAIL_APP_PASSWORD && !GMAIL_APP_PASSWORD.includes('PASTE_'))
+    configured: Boolean(BREVO_API_KEY && !BREVO_API_KEY.includes('PASTE_'))
   });
 });
 
@@ -176,10 +176,10 @@ app.post('/api/register-user', (req,res)=>{
 
 app.post('/api/send-email', async (req, res) => {
   try {
-    if (!GMAIL_APP_PASSWORD || GMAIL_APP_PASSWORD.includes('PASTE_')) {
+    if (!BREVO_API_KEY || BREVO_API_KEY.includes('PASTE_')) {
       return res.status(500).json({
         ok: false,
-        error: 'Gmail sender is not configured. Add the Google App Password for vooloovee@gmail.com in .env.'
+        error: 'Email sender is not configured. Add BREVO_API_KEY in your environment variables.'
       });
     }
 
@@ -188,20 +188,6 @@ app.post('/api/send-email', async (req, res) => {
     if (!isEmail(toEmail) || !subject || (type !== 'verify' && type !== 'general' && !actionLink)) {
       return res.status(400).json({ ok: false, error: 'Missing user email, subject, or action details.' });
     }
-
-    const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com',
-  port: 587,
-  secure: false,
-  requireTLS: true,
-  connectionTimeout: 20000,
-  greetingTimeout: 20000,
-  socketTimeout: 20000,
-  auth: {
-    user: GMAIL_USER,
-    pass: GMAIL_APP_PASSWORD
-  }
-});
 
     const safeName = clean(toName) || 'Vooloovee user';
     const safeTitle = clean(title) || clean(subject);
@@ -219,11 +205,7 @@ app.post('/api/send-email', async (req, res) => {
       saveResetPending(toEmail, token, userData || null);
     }
 
-    await transporter.sendMail({
-      from: `Vooloovee <${GMAIL_USER}>`,
-      to: `${safeName} <${toEmail}>`,
-      subject: clean(subject),
-      html: `
+    const htmlBody = `
         <div style="font-family:Arial,sans-serif;max-width:620px;margin:auto;padding:26px;border:1px solid #e5e7eb;border-radius:20px;background:#ffffff">
           <div style="font-size:13px;letter-spacing:.16em;text-transform:uppercase;color:#6b7280;font-weight:700">Vooloovee</div>
           <h2 style="margin:10px 0 8px;color:#111827">${safeTitle}</h2>
@@ -231,14 +213,33 @@ app.post('/api/send-email', async (req, res) => {
           ${type === 'verify' ? `<div style="margin:24px 0;padding:18px 22px;border-radius:16px;background:#f3f4f6;text-align:center;font-size:32px;font-weight:800;letter-spacing:.18em;color:#111827">${safeOtp}</div><p style="margin:18px 0"><a href="${safeLink}" style="display:inline-block;background:#111827;color:white;text-decoration:none;padding:13px 20px;border-radius:999px;font-weight:700">Open Verify OTP Page</a></p><p style="color:#6b7280;font-size:13px;line-height:1.5">Open the link and enter this OTP to verify your account.<br>After OTP verification, you will receive another email with a temporary password to log in. Once you log in, you can change your password from your profile.<br>If the button does not work, copy and open this link:<br>${safeLink}</p>` : (type === 'general' ? (safeLink ? `<p style="margin:24px 0"><a href="${safeLink}" style="display:inline-block;background:#111827;color:white;text-decoration:none;padding:13px 20px;border-radius:999px;font-weight:700">Open Vooloovee</a></p>` : ``) : `<p style="margin:24px 0"><a href="${safeLink}" style="display:inline-block;background:#111827;color:white;text-decoration:none;padding:13px 20px;border-radius:999px;font-weight:700">Update Password</a></p><p style="color:#6b7280;font-size:13px;line-height:1.5">If the button does not work, copy and open this link:<br>${safeLink}</p>`)}
           <p style="color:#9ca3af;font-size:12px;margin-top:24px">This email was sent from ${GMAIL_USER}. Do not share this ${type === 'verify' ? 'OTP' : 'link'} with anyone.</p>
         </div>
-      `,
-      text: type === 'verify' ? `${safeTitle}\n\n${safeMessage}\n\nOpen verify page: ${safeLink}\nYour OTP: ${safeOtp}\n\nAfter OTP verification, you will receive another email with a temporary password to log in. Once you log in, you can change your password from your profile.\n\nThis email was sent from ${GMAIL_USER}. Do not share this OTP with anyone.` : (type === 'general' ? `${safeTitle}\n\n${safeMessage}${safeLink ? `\n\nOpen: ${safeLink}` : ''}\n\nThis email was sent from ${GMAIL_USER}.` : `${safeTitle}\n\n${safeMessage}\n\nOpen this secure link: ${safeLink}\n\nThis email was sent from ${GMAIL_USER}. Do not share this link with anyone.`)
+      `;
+
+    const brevoRes = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: {
+        'accept': 'application/json',
+        'api-key': BREVO_API_KEY,
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({
+        sender: { name: BREVO_SENDER_NAME, email: GMAIL_USER },
+        to: [{ email: toEmail, name: safeName }],
+        subject: clean(subject),
+        htmlContent: htmlBody
+      })
     });
+
+    if (!brevoRes.ok) {
+      const errText = await brevoRes.text();
+      console.error('Brevo API error:', brevoRes.status, errText);
+      return res.status(500).json({ ok: false, error: 'Email could not be sent. Check the Brevo API key, sender verification, and server console.' });
+    }
 
     res.json({ ok: true, sender: GMAIL_USER });
   } catch (error) {
     console.error('Email error:', error);
-    res.status(500).json({ ok: false, error: 'Email could not be sent. Check the Gmail App Password and server console.' });
+    res.status(500).json({ ok: false, error: 'Email could not be sent. Check the Brevo API key and server console.' });
   }
 });
 
