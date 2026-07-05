@@ -190,12 +190,17 @@ app.post('/api/send-email', async (req, res) => {
     }
 
     const transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user: GMAIL_USER,
-        pass: GMAIL_APP_PASSWORD
-      }
-    });
+  host: 'smtp.gmail.com',
+  port: 465,
+  secure: true,
+  connectionTimeout: 30000,
+  greetingTimeout: 30000,
+  socketTimeout: 30000,
+  auth: {
+    user: GMAIL_USER,
+    pass: GMAIL_APP_PASSWORD
+  }
+});
 
     const safeName = clean(toName) || 'Vooloovee user';
     const safeTitle = clean(title) || clean(subject);
