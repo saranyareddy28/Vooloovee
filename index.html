@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+ <head>
+  <meta charset="utf-8"/>
+  <meta content="width=device-width,initial-scale=1" name="viewport"/>
+  <title>
+   Vooloovee
+  </title>
+  <link href="favicon.png" rel="icon" type="image/png"/>
+  <link href="apple-touch-icon.png" rel="apple-touch-icon"/>
+  <link href="style.css" rel="stylesheet"/>
+ </head>
+ <body>
+  <main class="auth">
+   <section class="auth-card">
+    <div class="auth-hero">
+     <h1 class="script">
+      Vooloovee
+     </h1>
+     <p>
+      Premium fashion shopping for every style.
+     </p>
+    </div>
+    <div class="login-box">
+     <h2>
+      Welcome back
+     </h2>
+     <div class="role-tabs">
+      <button class="active" data-role="user">
+       User
+      </button>
+      <button data-role="brand">
+       Brand
+      </button>
+     </div>
+     <form id="loginForm">
+      <label>
+       Email
+      </label>
+      <input id="email" placeholder="Enter email"/>
+      <div class="error" id="emailError">
+      </div>
+      <label>
+       Password
+      </label>
+      <input id="password" placeholder="Enter password" type="password"/>
+      <div class="error" id="passwordError">
+      </div>
+      <br/>
+      <button class="btn primary" style="width:100%">
+       Login
+      </button>
+     </form>
+    </div>
+   </section>
+  </main>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2">
+  </script>
+  <script src="app.js">
+  </script>
+  <script>
+   Vooloovee.authPage()
+  </script>
+ </body>
+</html>
